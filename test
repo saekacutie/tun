@@ -129,7 +129,7 @@ show_dashboard() {
     local connections=$(echo "$status_json" | grep -o '"connections":[^,}]*' | cut -d':' -f2)
     
     echo ""
-    printf "  ${BOLD}${WHITE}%-20s${RESET}" "SERVER INFORMATION"
+    printf "  %-20s" "SERVER INFORMATION"
     echo ""
     draw_line
     info_row "Target Host" "$target" "$GREEN"
@@ -140,17 +140,20 @@ show_dashboard() {
     
     # Quick actions
     echo ""
-    printf "  ${BOLD}${WHITE}QUICK ACTIONS${RESET}\n"
-    echo "  ${CYAN}[1]${RESET} View All Connections"
-    echo "  ${CYAN}[2]${RESET} Block an IP Address"
-    echo "  ${CYAN}[3]${RESET} Unblock an IP Address"
-    echo "  ${CYAN}[4]${RESET} Change Target Server"
-    echo "  ${CYAN}[5]${RESET} Refresh Dashboard"
-    echo "  ${CYAN}[6]${RESET} Open Web Interface"
-    echo "  ${CYAN}[7]${RESET} Exit"
+    echo "  =================================================="
+    echo "                QUICK ACTIONS"
+    echo "  =================================================="
     echo ""
-    draw_double_line
-    echo -ne "${BOLD}${WHITE}Select option [1-7]: ${RESET}"
+    echo "  [1]  View All Connections"
+    echo "  [2]  Block an IP Address"
+    echo "  [3]  Unblock an IP Address"
+    echo "  [4]  Change Target Server"
+    echo "  [5]  Refresh Dashboard"
+    echo "  [6]  Open Web Interface"
+    echo "  [7]  Exit"
+    echo ""
+    echo "  =================================================="
+    echo -n "Select option [1-7]: "
 }
 
 show_connections() {
