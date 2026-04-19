@@ -1,0 +1,346 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ==============================================
+#        VLESS CONTROL PANEL - TERMUX EDITION
+#              Owner: Prvtspyyy404
+# ==============================================
+
+# --- Bold Colors & Formatting ---
+BOLD='\033[1m'
+RESET='\033[0m'
+BLACK='\033[0;30m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+GRAY='\033[0;90m'
+
+BG_BLACK='\033[40m'
+BG_RED='\033[41m'
+BG_GREEN='\033[42m'
+BG_YELLOW='\033[43m'
+BG_BLUE='\033[44m'
+BG_MAGENTA='\033[45m'
+BG_CYAN='\033[46m'
+BG_WHITE='\033[47m'
+
+# --- Configuration ---
+SERVER="${1:-http://localhost:8888}"
+KEY="prvtspyyy404"
+CONFIG_DIR="$HOME/.vless-manager"
+mkdir -p "$CONFIG_DIR"
+
+# --- Helper Functions ---
+draw_line() {
+    printf "${BLUE}%$(tput cols)s${RESET}\n" | tr ' ' '─'
+}
+
+draw_double_line() {
+    printf "${BLUE}%$(tput cols)s${RESET}\n" | tr ' ' '═'
+}
+
+center_text() {
+    local text="$1"
+    local width=$(tput cols)
+    local padding=$(( (width - ${#text}) / 2 ))
+    printf "%${padding}s" | tr ' ' ' '
+    echo -e "$text"
+}
+
+header_box() {
+    local title="$1"
+    echo ""
+    draw_double_line
+    center_text "${BOLD}${WHITE}${title}${RESET}"
+    draw_double_line
+    echo ""
+}
+
+info_row() {
+    local label="$1"
+    local value="$2"
+    local color="${3:-$WHITE}"
+    printf "  ${BOLD}${CYAN}%-16s${RESET} ${color}%s${RESET}\n" "$label" "$value"
+}
+
+status_badge() {
+    local status="$1"
+    case "$status" in
+        "ACTIVE"|"ONLINE"|"EXCELLENT")
+            echo -e "${BG_GREEN}${BLACK} ${status} ${RESET}"
+            ;;
+        "BLOCKED"|"OFFLINE"|"HIGH")
+            echo -e "${BG_RED}${WHITE} ${status} ${RESET}"
+            ;;
+        "GOOD")
+            echo -e "${BG_YELLOW}${BLACK} ${status} ${RESET}"
+            ;;
+        *)
+            echo -e "${BG_BLUE}${WHITE} ${status} ${RESET}"
+            ;;
+    esac
+}
+
+ping_indicator() {
+    local ping="$1"
+    if [ "$ping" -lt 0 ] 2>/dev/null; then
+        echo -e "${RED}OFFLINE${RESET}"
+    elif [ "$ping" -lt 100 ] 2>/dev/null; then
+        echo -e "${GREEN}${ping}ms (EXCELLENT)${RESET}"
+    elif [ "$ping" -lt 200 ] 2>/dev/null; then
+        echo -e "${YELLOW}${ping}ms (GOOD)${RESET}"
+    else
+        echo -e "${RED}${ping}ms (HIGH)${RESET}"
+    fi
+}
+
+# --- API Calls ---
+api_call() {
+    local endpoint="$1"
+    curl -s --connect-timeout 5 "$SERVER/api/termux?key=$KEY&$endpoint" 2>/dev/null
+}
+
+# --- Display Functions ---
+show_banner() {
+    clear
+    echo ""
+    center_text "${BOLD}${WHITE}██╗   ██╗██╗     ███████╗███████╗███████╗${RESET}"
+    center_text "${BOLD}${WHITE}██║   ██║██║     ██╔════╝██╔════╝██╔════╝${RESET}"
+    center_text "${BOLD}${WHITE}██║   ██║██║     █████╗  ███████╗███████╗${RESET}"
+    center_text "${BOLD}${WHITE}╚██╗ ██╔╝██║     ██╔══╝  ╚════██║╚════██║${RESET}"
+    center_text "${BOLD}${WHITE} ╚████╔╝ ███████╗███████╗███████║███████║${RESET}"
+    center_text "${BOLD}${WHITE}  ╚═══╝  ╚══════╝╚══════╝╚══════╝╚══════╝${RESET}"
+    echo ""
+    center_text "${BOLD}${CYAN}TERMUX CONTROL PANEL${RESET}"
+    center_text "${GRAY}Owner: Prvtspyyy404 | Server: $SERVER${RESET}"
+    echo ""
+}
+
+show_dashboard() {
+    show_banner
+    header_box "SYSTEM OVERVIEW"
+    
+    # Fetch status from server
+    local status_json=$(api_call "cmd=status")
+    local target=$(echo "$status_json" | grep -o '"target":"[^"]*"' | cut -d'"' -f4)
+    local ping=$(echo "$status_json" | grep -o '"ping":[^,}]*' | cut -d':' -f2)
+    local connections=$(echo "$status_json" | grep -o '"connections":[^,}]*' | cut -d':' -f2)
+    
+    echo ""
+    printf "  ${BOLD}${WHITE}%-20s${RESET}" "SERVER INFORMATION"
+    echo ""
+    draw_line
+    info_row "Target Host" "$target" "$GREEN"
+    info_row "Ping Status" "$(ping_indicator $ping)"
+    info_row "Active Users" "$connections" "$CYAN"
+    info_row "Server URL" "$SERVER" "$GRAY"
+    draw_line
+    
+    # Quick actions
+    echo ""
+    printf "  ${BOLD}${WHITE}QUICK ACTIONS${RESET}\n"
+    echo "  ${CYAN}[1]${RESET} View All Connections"
+    echo "  ${CYAN}[2]${RESET} Block an IP Address"
+    echo "  ${CYAN}[3]${RESET} Unblock an IP Address"
+    echo "  ${CYAN}[4]${RESET} Change Target Server"
+    echo "  ${CYAN}[5]${RESET} Refresh Dashboard"
+    echo "  ${CYAN}[6]${RESET} Open Web Interface"
+    echo "  ${CYAN}[7]${RESET} Exit"
+    echo ""
+    draw_double_line
+    echo -ne "${BOLD}${WHITE}Select option [1-7]: ${RESET}"
+}
+
+show_connections() {
+    show_banner
+    header_box "CONNECTED USERS"
+    
+    local conn_json=$(api_call "cmd=list")
+    
+    if [ -z "$conn_json" ] || [ "$conn_json" = "[]" ]; then
+        echo ""
+        center_text "${GRAY}No active connections${RESET}"
+        echo ""
+    else
+        printf "\n  ${BOLD}${WHITE}%-18s %-15s %-12s %s${RESET}\n" "IP ADDRESS" "CONNECTED" "STATUS" "LOCATION"
+        draw_line
+        
+        local count=0
+        while IFS= read -r line; do
+            local ip=$(echo "$line" | grep -o '"ip":"[^"]*"' | cut -d'"' -f4)
+            local connected=$(echo "$line" | grep -o '"connected":"[^"]*"' | cut -d'"' -f4)
+            local blocked=$(echo "$line" | grep -o '"blocked":[^,}]*' | cut -d':' -f2)
+            local country=$(echo "$line" | grep -o '"country":"[^"]*"' | cut -d'"' -f4)
+            
+            [ -z "$ip" ] && continue
+            count=$((count + 1))
+            
+            local status="ACTIVE"
+            [ "$blocked" = "true" ] && status="BLOCKED"
+            
+            local short_date=$(echo "$connected" | cut -d' ' -f1 2>/dev/null || echo "$connected")
+            
+            printf "  ${CYAN}%-18s${RESET} ${GRAY}%-15s${RESET} %-12s ${GREEN}%s${RESET}\n" \
+                "$ip" "$short_date" "$(status_badge "$status")" "${country:-Unknown}"
+        done < <(echo "$conn_json" | grep -o '{[^}]*}')
+        
+        echo ""
+        draw_line
+        printf "  ${BOLD}Total Connections: ${GREEN}%d${RESET}\n" "$count"
+    fi
+    
+    echo ""
+    draw_double_line
+    echo -ne "${BOLD}${WHITE}Press Enter to return to dashboard...${RESET}"
+    read -r
+}
+
+block_ip_dialog() {
+    show_banner
+    header_box "BLOCK IP ADDRESS"
+    
+    echo ""
+    center_text "${YELLOW}Enter the IP address you want to block${RESET}"
+    echo ""
+    printf "  ${BOLD}${WHITE}IP Address: ${RESET}"
+    read -r ip
+    
+    if [ -n "$ip" ]; then
+        echo ""
+        center_text "${YELLOW}Blocking $ip...${RESET}"
+        local result=$(api_call "cmd=block&ip=$ip")
+        
+        if echo "$result" | grep -q '"success":true'; then
+            echo ""
+            center_text "${GREEN}✓ IP $ip has been blocked successfully${RESET}"
+        else
+            echo ""
+            center_text "${RED}✗ Failed to block $ip${RESET}"
+        fi
+    fi
+    
+    echo ""
+    draw_double_line
+    echo -ne "${BOLD}${WHITE}Press Enter to continue...${RESET}"
+    read -r
+}
+
+unblock_ip_dialog() {
+    show_banner
+    header_box "UNBLOCK IP ADDRESS"
+    
+    echo ""
+    center_text "${YELLOW}Enter the IP address you want to unblock${RESET}"
+    echo ""
+    printf "  ${BOLD}${WHITE}IP Address: ${RESET}"
+    read -r ip
+    
+    if [ -n "$ip" ]; then
+        echo ""
+        center_text "${YELLOW}Unblocking $ip...${RESET}"
+        local result=$(api_call "cmd=unblock&ip=$ip")
+        
+        if echo "$result" | grep -q '"success":true'; then
+            echo ""
+            center_text "${GREEN}✓ IP $ip has been unblocked successfully${RESET}"
+        else
+            echo ""
+            center_text "${RED}✗ Failed to unblock $ip${RESET}"
+        fi
+    fi
+    
+    echo ""
+    draw_double_line
+    echo -ne "${BOLD}${WHITE}Press Enter to continue...${RESET}"
+    read -r
+}
+
+change_target_dialog() {
+    show_banner
+    header_box "CHANGE TARGET SERVER"
+    
+    local status_json=$(api_call "cmd=status")
+    local current_target=$(echo "$status_json" | grep -o '"target":"[^"]*"' | cut -d'"' -f4)
+    
+    echo ""
+    info_row "Current Target" "$current_target" "$CYAN"
+    echo ""
+    center_text "${YELLOW}Enter the new target hostname${RESET}"
+    echo ""
+    printf "  ${BOLD}${WHITE}New Target: ${RESET}"
+    read -r host
+    
+    if [ -n "$host" ]; then
+        echo ""
+        center_text "${YELLOW}Updating target to $host...${RESET}"
+        local result=$(api_call "cmd=target&host=$host")
+        
+        if echo "$result" | grep -q '"success":true'; then
+            echo ""
+            center_text "${GREEN}✓ Target updated to $host${RESET}"
+        else
+            echo ""
+            center_text "${RED}✗ Failed to update target${RESET}"
+        fi
+    fi
+    
+    echo ""
+    draw_double_line
+    echo -ne "${BOLD}${WHITE}Press Enter to continue...${RESET}"
+    read -r
+}
+
+# --- Main Menu Loop ---
+main() {
+    # Check if server is reachable
+    if ! curl -s --connect-timeout 3 "$SERVER/api/status" > /dev/null 2>&1; then
+        show_banner
+        header_box "CONNECTION ERROR"
+        echo ""
+        center_text "${RED}⚠️  Cannot connect to VLESS server${RESET}"
+        center_text "${GRAY}Server: $SERVER${RESET}"
+        echo ""
+        center_text "${YELLOW}Please ensure:${RESET}"
+        center_text "  1. The VLESS service is running"
+        center_text "  2. The dashboard server is active (python3 server.py)"
+        center_text "  3. You are connected to the VPN"
+        echo ""
+        draw_double_line
+        echo -ne "${BOLD}${WHITE}Press Enter to retry...${RESET}"
+        read -r
+        main
+        return
+    fi
+    
+    while true; do
+        show_dashboard
+        read -r choice
+        
+        case $choice in
+            1) show_connections ;;
+            2) block_ip_dialog ;;
+            3) unblock_ip_dialog ;;
+            4) change_target_dialog ;;
+            5) continue ;;
+            6) 
+                termux-open-url "$SERVER" 2>/dev/null || echo -e "${YELLOW}Opening $SERVER in browser...${RESET}"
+                sleep 2
+                ;;
+            7) 
+                echo ""
+                center_text "${GREEN}Exiting VLESS Control Panel. Goodbye.${RESET}"
+                echo ""
+                exit 0
+                ;;
+            *) 
+                echo -e "${RED}Invalid option. Please try again.${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+# --- Entry Point ---
+main
