@@ -1,67 +1,198 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# VLESS Termux Manager - Prvtspyyy404
+# ==============================================
+#        VLESS TERMUX MANAGER - Prvtspyyy404
+#        Full Block/Unblock Capability
+# ==============================================
 
+# --- Configuration ---
 SERVICE_NAME="prvtspyyy404"
 REGION="us-central1"
+BUCKET_NAME="vless-blocklist-prvtspyyy"  # Change to your bucket name
+BLOCKED_FILE="blocked_ips.txt"
+
+# --- Colors ---
+BOLD='\033[1m'
+RESET='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+WHITE='\033[1;37m'
+
+# --- Check Dependencies ---
+check_deps() {
+    if ! command -v gcloud &> /dev/null; then
+        echo -e "${RED}Error: gcloud not installed.${RESET}"
+        echo "Run: pkg install google-cloud-sdk"
+        exit 1
+    fi
+    
+    if ! command -v gsutil &> /dev/null; then
+        echo -e "${YELLOW}Installing gsutil...${RESET}"
+        pip install gsutil --quiet 2>/dev/null || {
+            echo -e "${RED}Failed to install gsutil${RESET}"
+            exit 1
+        }
+    fi
+}
+
+# --- Blocklist Functions ---
+download_blocklist() {
+    gsutil cp "gs://$BUCKET_NAME/$BLOCKED_FILE" /tmp/$BLOCKED_FILE 2>/dev/null
+    cat /tmp/$BLOCKED_FILE 2>/dev/null | sort -u
+}
+
+upload_blocklist() {
+    local content="$1"
+    echo "$content" | gsutil cp - "gs://$BUCKET_NAME/$BLOCKED_FILE" 2>/dev/null
+}
+
+block_ip() {
+    local ip="$1"
+    if [ -z "$ip" ]; then
+        echo -e "${RED}No IP provided.${RESET}"
+        return
+    fi
+    
+    local current=$(download_blocklist)
+    if echo "$current" | grep -Fxq "$ip"; then
+        echo -e "${YELLOW}IP $ip is already blocked.${RESET}"
+    else
+        echo -e "$current\n$ip" | sort -u | upload_blocklist
+        echo -e "${GREEN}IP $ip has been blocked.${RESET}"
+    fi
+}
+
+unblock_ip() {
+    local ip="$1"
+    if [ -z "$ip" ]; then
+        echo -e "${RED}No IP provided.${RESET}"
+        return
+    fi
+    
+    local current=$(download_blocklist)
+    if echo "$current" | grep -Fxq "$ip"; then
+        echo "$current" | grep -Fvx "$ip" | upload_blocklist
+        echo -e "${GREEN}IP $ip has been unblocked.${RESET}"
+    else
+        echo -e "${YELLOW}IP $ip is not blocked.${RESET}"
+    fi
+}
+
+# --- Display Functions ---
+show_banner() {
+    clear
+    echo ""
+    echo -e "${BOLD}${CYAN}══════════════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}${WHITE}         VLESS TERMUX MANAGER - Prvtspyyy404${RESET}"
+    echo -e "${BOLD}${CYAN}══════════════════════════════════════════════════${RESET}"
+    echo ""
+}
 
 show_connections() {
     echo ""
-    echo "══════════════════════════════════════════════════"
-    echo "              CONNECTED USERS"
-    echo "══════════════════════════════════════════════════"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}${WHITE}              CONNECTED USERS${RESET}"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
     echo ""
+    
+    local blocked=$(download_blocklist)
     
     gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE_NAME AND textPayload:\"accepted\"" \
         --freshness=1h --format="value(textPayload)" 2>/dev/null | \
         grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort | uniq -c | sort -rn | \
         while read count ip; do
-            echo "  IP: $ip | Connections: $count"
+            if echo "$blocked" | grep -Fxq "$ip"; then
+                echo -e "  ${RED}IP: $ip | Connections: $count | STATUS: BLOCKED${RESET}"
+            else
+                echo -e "  ${GREEN}IP: $ip | Connections: $count | STATUS: ACTIVE${RESET}"
+            fi
         done
     
     echo ""
-    echo "══════════════════════════════════════════════════"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
+}
+
+show_blocked() {
+    echo ""
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}${WHITE}              BLOCKED IPs${RESET}"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
+    echo ""
+    
+    download_blocklist | while read ip; do
+        [ -n "$ip" ] && echo -e "  ${RED}$ip${RESET}"
+    done
+    
+    echo ""
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
 }
 
 show_status() {
     echo ""
-    echo "══════════════════════════════════════════════════"
-    echo "              SERVER STATUS"
-    echo "══════════════════════════════════════════════════"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
+    echo -e "${BOLD}${WHITE}              SERVER STATUS${RESET}"
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
     echo ""
     
     URL=$(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --format="value(status.url)" 2>/dev/null)
     STATUS=$(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --format="value(status.conditions[0].status)" 2>/dev/null)
     
-    echo "  Service: $SERVICE_NAME"
-    echo "  Region: $REGION"
-    echo "  URL: $URL"
+    echo -e "  ${CYAN}Service:${RESET} $SERVICE_NAME"
+    echo -e "  ${CYAN}Region:${RESET} $REGION"
+    echo -e "  ${CYAN}URL:${RESET} $URL"
     
     if [ "$STATUS" = "True" ]; then
-        echo "  Status: ONLINE"
+        echo -e "  ${CYAN}Status:${RESET} ${GREEN}ONLINE${RESET}"
     else
-        echo "  Status: OFFLINE"
+        echo -e "  ${CYAN}Status:${RESET} ${RED}OFFLINE${RESET}"
     fi
     
     echo ""
-    echo "══════════════════════════════════════════════════"
+    
+    # Count blocked IPs
+    local blocked_count=$(download_blocklist | grep -c . 2>/dev/null || echo 0)
+    echo -e "  ${CYAN}Blocked IPs:${RESET} $blocked_count"
+    
+    echo ""
+    echo -e "${BOLD}${WHITE}══════════════════════════════════════════════════${RESET}"
 }
 
-clear
-echo "══════════════════════════════════════════════════"
-echo "         VLESS TERMUX MANAGER - Prvtspyyy404"
-echo "══════════════════════════════════════════════════"
-echo ""
-echo "  [1] View Connected Users"
-echo "  [2] View Server Status"
-echo "  [3] View Recent Logs"
-echo "  [4] Exit"
-echo ""
-read -p "Select option [1-4]: " choice
+show_logs() {
+    echo ""
+    echo -e "${YELLOW}Fetching recent logs...${RESET}"
+    gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE_NAME" \
+        --freshness=30m --limit=10 --format="table(timestamp,textPayload)" 2>/dev/null
+}
 
-case $choice in
-    1) show_connections ;;
-    2) show_status ;;
-    3) gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE_NAME" --freshness=30m --limit=15 2>/dev/null ;;
-    4) exit 0 ;;
-    *) echo "Invalid option" ;;
-esac
+# --- Main Menu ---
+main() {
+    check_deps
+    
+    while true; do
+        show_banner
+        echo -e "  ${BOLD}[1]${RESET} View Connected Users"
+        echo -e "  ${BOLD}[2]${RESET} View Server Status"
+        echo -e "  ${BOLD}[3]${RESET} View Blocked IPs"
+        echo -e "  ${BOLD}[4]${RESET} Block an IP"
+        echo -e "  ${BOLD}[5]${RESET} Unblock an IP"
+        echo -e "  ${BOLD}[6]${RESET} View Recent Logs"
+        echo -e "  ${BOLD}[7]${RESET} Exit"
+        echo ""
+        read -p "$(echo -e "${BOLD}Select option [1-7]: ${RESET}")" choice
+        
+        case $choice in
+            1) show_connections; read -p "Press Enter to continue..." ;;
+            2) show_status; read -p "Press Enter to continue..." ;;
+            3) show_blocked; read -p "Press Enter to continue..." ;;
+            4) read -p "Enter IP to block: " ip; block_ip "$ip"; read -p "Press Enter to continue..." ;;
+            5) read -p "Enter IP to unblock: " ip; unblock_ip "$ip"; read -p "Press Enter to continue..." ;;
+            6) show_logs; read -p "Press Enter to continue..." ;;
+            7) echo -e "${GREEN}Exiting.${RESET}"; exit 0 ;;
+            *) echo -e "${RED}Invalid option.${RESET}"; sleep 1 ;;
+        esac
+    done
+}
+
+# --- Entry Point ---
+main
